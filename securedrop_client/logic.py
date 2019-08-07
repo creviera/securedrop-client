@@ -33,7 +33,6 @@ from securedrop_client import storage
 from securedrop_client import db
 from securedrop_client.api_jobs.downloads import FileDownloadJob, MessageDownloadJob, \
     ReplyDownloadJob, DownloadChecksumMismatchException
-from securedrop_client.api_jobs.base import PauseQueueJob
 from securedrop_client.api_jobs.uploads import SendReplyJob, SendReplyJobException
 from securedrop_client.api_jobs.updatestar import UpdateStarJob, UpdateStarJobException
 from securedrop_client.crypto import GpgHelper, CryptoError
@@ -267,6 +266,9 @@ class Controller(QObject):
             duration=0,
             retry=True)
 
+    def resume_queues(self) -> None:
+        self.api_job_queue.resume_queues()
+
     def on_api_timeout(self) -> None:
         self.gui.update_error_status(_('The connection to the SecureDrop server timed out. '
                                        'Please try again.'))
@@ -446,7 +448,6 @@ class Controller(QObject):
         """
         self.sync_api()  # Syncing the API also updates the source list UI
         self.gui.clear_error_status()
-        self.api_job_queue.enqueue(PauseQueueJob())
 
     def on_update_star_failure(self, result: UpdateStarJobException) -> None:
         """
