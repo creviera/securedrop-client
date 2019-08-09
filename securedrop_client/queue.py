@@ -11,7 +11,7 @@ from securedrop_client.api_jobs.base import ApiJob, ApiInaccessibleError, DEFAUL
     PauseQueueJob
 from securedrop_client.api_jobs.downloads import (FileDownloadJob, MessageDownloadJob,
                                                   ReplyDownloadJob)
-from securedrop_client.api_jobs.uploads import SendReplyJob
+from securedrop_client.api_jobs.uploads import SendReplyJob, SendReplyJobTimeoutError
 from securedrop_client.api_jobs.updatestar import UpdateStarJob
 
 
@@ -75,10 +75,14 @@ class RunnableQueue(QObject):
             try:
                 session = self.session_maker()
                 job._do_call_api(self.api_client, session)
-            except (RequestTimeoutError, ApiInaccessibleError):
+            except (RequestTimeoutError, SendReplyJobTimeoutError, ApiInaccessibleError) as e:
                 self.pause.emit()
                 job.remaining_attempts = DEFAULT_NUM_ATTEMPTS
                 self.queue.put_nowait((priority, job))
+                logger.debug('Job {} raised  exception: {}: {}'.format(job, type(e).__name__, e))
+            except Exception as e:
+                logger.error('Job {} raised  exception: {}: {}'.format(job, type(e).__name__, e))
+                logger.error('Skipping job')
             finally:
                 session.close()
 
