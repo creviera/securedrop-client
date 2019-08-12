@@ -202,7 +202,7 @@ def test_RunnableQueue_does_not_run_jobs_when_not_authed(mocker):
     '''
     queue = RunnableQueue(mocker.MagicMock(), mocker.MagicMock())
     queue.pause = mocker.MagicMock()
-    mock_logger = mocker.patch('securedrop_client.api_jobs.base.logger')
+    debug_logger = mocker.patch('securedrop_client.queue.logger.debug')
 
     # ApiInaccessibleError will cause the queue to pause, use our fake pause method instead
     def fake_pause() -> None:
@@ -214,10 +214,10 @@ def test_RunnableQueue_does_not_run_jobs_when_not_authed(mocker):
     job = job_cls()
     queue.add_job(1, job)
 
-    # attempt to process job1 knowing that it times out
+    # attempt to process job knowing that it fails
     queue.process()
-    assert queue.queue.qsize() == 1  # queue contains: job1
-    assert "Client is not authenticated" in mock_logger.error.call_args[0][0]
+    assert queue.queue.qsize() == 1
+    assert "ApiInaccessibleError" in debug_logger.call_args_list[0][0][0]
 
 
 def test_ApiJobQueue_enqueue(mocker):

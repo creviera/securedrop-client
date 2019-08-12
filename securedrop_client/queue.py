@@ -26,27 +26,27 @@ class RunnableQueue(QObject):
     pause = pyqtSignal()
 
     def __init__(self, api_client: API, session_maker: scoped_session) -> None:
+        '''
+        One of the challenges of using Python's PriorityQueue is that
+        for objects (jobs) with equal priorities, they are not retrieved
+        in FIFO order due to the fact PriorityQueue is implemented using
+        heapq which does not have sort stability. In order to ensure sort
+        stability, we need to add a counter to ensure that objects with equal
+        priorities are retrived in FIFO order.
+        See also: https://bugs.python.org/issue17794
+        '''
         super().__init__()
         self.api_client = api_client
         self.session_maker = session_maker
         self.queue = PriorityQueue()  # type: PriorityQueue[Tuple[int, ApiJob]]
-
-        # One of the challenges of using Python's PriorityQueue is that
-        # for objects (jobs) with equal priorities, they are not retrieved
-        # in FIFO order due to the fact PriorityQueue is implemented using
-        # heapq which does not have sort stability. In order to ensure sort
-        # stability, we need to add a counter to ensure that objects with equal
-        # priorities are retrived in FIFO order.
-        # See also: https://bugs.python.org/issue17794
         self.order_number = itertools.count()
 
     def add_job(self, priority: int, job: ApiJob) -> None:
-        """
+        '''
         Increment the queue's internal counter/order_number, assign an
         order_number to the job to track its position in the queue,
         and submit the job with its priority to the queue.
-        """
-
+        '''
         current_order_number = next(self.order_number)
         job.order_number = current_order_number
         self.queue.put_nowait((priority, job))
