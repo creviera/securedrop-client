@@ -66,18 +66,16 @@ class ApiJob(QObject):
             try:
                 self.remaining_attempts -= 1
                 result = self.call_api(api_client, session)
-            except AuthError as e:
-                raise ApiInaccessibleError() from e
-            except ApiInaccessibleError as e:
-                # Do not let ApiInaccessibleError emit the regular failure signal, raise now
+            except (AuthError, ApiInaccessibleError) as e:
+                logger.error('Client is not authenticated')
                 raise ApiInaccessibleError() from e
             except RequestTimeoutError:
                 logger.debug('Job {} timed out'.format(self))
                 if self.remaining_attempts == 0:
                     raise
             except Exception as e:
-                logger.error('Job {} raised an exception: {}: {}'
-                             .format(self, type(e).__name__, e))
+                logger.error('Job {} raised an exception: {}: {}'.format(self, type(e).__name__, e))
+                logger.error('Skipping job')
                 self.failure_signal.emit(e)
                 break
             else:
