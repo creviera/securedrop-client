@@ -29,6 +29,7 @@ from gettext import gettext as _
 from PyQt5.QtCore import QObject, QThread, pyqtSignal, QTimer, QProcess, Qt
 from sdclientapi import RequestTimeoutError
 from sqlalchemy.orm.session import sessionmaker
+from tempfile import TemporaryDirectory
 
 from securedrop_client import storage
 from securedrop_client import db
@@ -574,32 +575,36 @@ class Controller(QObject):
             self._submit_download_job(exception.object_type, exception.uuid)
 
     def on_file_open(self, file_uuid: str) -> None:
-        """
-        Open the already downloaded file associated with the message (which is a `File`).
-        """
-        # Once downloaded, submissions are stored in the data directory
-        # with the same filename as the server, except with the .gz.gpg
-        # stripped off.
+        '''
+        Open the downloaded file specified by file_uuid.
+
+        A file is downloaded, decrypte, and stored in the data directory with a filename provided
+        by the server using the naming convention: <count>-<journalist_designation>-doc.
+
+        In order to open this file with the correct application, the display VM needs to know the
+        file's MIME type or extension.
+
+        For example, if the file stored as 1-a-journalist-designation-doc is a PDF then we need to
+        make sure the proper extension is used before making the `qvm-open-in-vm` call. This is why
+        we create a hard link with the original filename and extension to the file stored in the
+        data directory.
+        '''
         file = self.get_file(file_uuid)
         fn_no_ext, _ = os.path.splitext(os.path.splitext(file.filename)[0])
         submission_filepath = os.path.join(self.data_dir, fn_no_ext)
-        original_filepath = os.path.join(self.data_dir, file.original_filename)
 
-        if os.path.exists(original_filepath):
-            os.remove(original_filepath)
-        os.link(submission_filepath, original_filepath)
-        if self.proxy or self.qubes:
-            # Running on Qubes.
+        logger.info('Opening file "{}".'.format(submission_filepath))
+
+        if not self.qubes:
+            return
+
+        with TemporaryDirectory() as temp_dir:
+            file_with_orig_name_and_ext = os.path.join(temp_dir, file.original_filename)
+            os.link(submission_filepath, file_with_orig_name_and_ext)
             command = "qvm-open-in-vm"
-            args = ['$dispvm:sd-svs-disp', original_filepath]
-
-            # QProcess (Qt) or Python's subprocess? Who cares? They do the
-            # same thing. :-)
+            args = ['$dispvm:sd-svs-disp', file_with_orig_name_and_ext]
             process = QProcess(self)
             process.start(command, args)
-        else:  # pragma: no cover
-            # Non Qubes OS. Just log the event for now.
-            logger.info('Opening file "{}".'.format(original_filepath))
 
     def run_export_preflight_checks(self):
         '''
