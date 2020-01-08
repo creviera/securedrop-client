@@ -1455,6 +1455,8 @@ def test_FileWidget__on_export_clicked(mocker, session, source):
 
     get_file = mocker.MagicMock(return_value=file)
     controller = mocker.MagicMock(get_file=get_file)
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
 
     fw = FileWidget(file.uuid, controller, mocker.MagicMock())
     fw.update = mocker.MagicMock()
@@ -1462,13 +1464,10 @@ def test_FileWidget__on_export_clicked(mocker, session, source):
     controller.run_export_preflight_checks = mocker.MagicMock()
     controller.downloaded_file_exists = mocker.MagicMock(return_value=True)
 
-    fw._on_export_clicked()
-
-    controller.run_export_preflight_checks.assert_called_once_with()
-
-    # Also assert that the dialog is initialized
     dialog = mocker.patch('securedrop_client.gui.widgets.ExportDialog')
+
     fw._on_export_clicked()
+
     dialog.assert_called_once_with(controller, file.uuid, file.original_filename)
 
 
@@ -1482,17 +1481,19 @@ def test_FileWidget__on_export_clicked_missing_file(mocker, session, source):
 
     get_file = mocker.MagicMock(return_value=file)
     controller = mocker.MagicMock(get_file=get_file)
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
 
     fw = FileWidget(file.uuid, controller, mocker.MagicMock())
     fw.update = mocker.MagicMock()
     mocker.patch('securedrop_client.gui.widgets.QDialog.exec')
     controller.run_export_preflight_checks = mocker.MagicMock()
     controller.downloaded_file_exists = mocker.MagicMock(return_value=False)
+
     dialog = mocker.patch('securedrop_client.gui.widgets.ExportDialog')
 
     fw._on_export_clicked()
 
-    controller.run_export_preflight_checks.assert_not_called()
     dialog.assert_not_called()
 
 
@@ -1506,6 +1507,8 @@ def test_FileWidget__on_print_clicked(mocker, session, source):
 
     get_file = mocker.MagicMock(return_value=file)
     controller = mocker.MagicMock(get_file=get_file)
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
 
     fw = FileWidget(file.uuid, controller, mocker.MagicMock())
     fw.update = mocker.MagicMock()
@@ -1513,14 +1516,11 @@ def test_FileWidget__on_print_clicked(mocker, session, source):
     controller.print_file = mocker.MagicMock()
     controller.downloaded_file_exists = mocker.MagicMock(return_value=True)
 
-    fw._on_print_clicked()
-
-    controller.print_file.assert_called_once_with(file.uuid)
-
-    # Also assert that the dialog is initialized
     dialog = mocker.patch('securedrop_client.gui.widgets.PrintDialog')
+
     fw._on_print_clicked()
-    dialog.assert_called_once_with(controller, file.uuid)
+
+    dialog.assert_called_once_with(controller, file.uuid, file.original_filename)
 
 
 def test_FileWidget__on_print_clicked_missing_file(mocker, session, source):
@@ -1533,75 +1533,178 @@ def test_FileWidget__on_print_clicked_missing_file(mocker, session, source):
 
     get_file = mocker.MagicMock(return_value=file)
     controller = mocker.MagicMock(get_file=get_file)
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
 
     fw = FileWidget(file.uuid, controller, mocker.MagicMock())
     fw.update = mocker.MagicMock()
     mocker.patch('securedrop_client.gui.widgets.QDialog.exec')
     controller.print_file = mocker.MagicMock()
     controller.downloaded_file_exists = mocker.MagicMock(return_value=False)
+
     dialog = mocker.patch('securedrop_client.gui.widgets.PrintDialog')
 
     fw._on_print_clicked()
 
-    controller.print_file.assert_not_called()
     dialog.assert_not_called()
 
 
-def test_ExportDialog_export(mocker):
-    """
-    Ensure happy path runs preflight checks and requests passphrase.
-    """
+def test_ExportDialog_init(mocker):
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     controller = mocker.MagicMock()
-    export_dialog = ExportDialog(controller, 'mock_uuid', 'mock.jpg')
-    export_dialog._request_passphrase = mocker.MagicMock()
+    controller.run_start_export_vm = mocker.MagicMock()
+    _show_starting_instructions = mocker.patch(
+        'securedrop_client.gui.widgets.ExportDialog._show_starting_instructions')
+    dialog = ExportDialog(controller, 'mock_uuid', 'mock.jpg')
+    assert not dialog.continue_button.isEnabled()
+    _show_starting_instructions.assert_called_once_with()
+    controller.run_start_export_vm.assert_called_once_with()
 
-    export_dialog.export()
+
+def test_ExportDialog__on_continue_clicked(mocker):
+    """
+    Ensure preflight checks are called when continue button is clicked.
+    """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    controller = mocker.MagicMock()
+    controller.run_export_preflight_checks = mocker.MagicMock()
+    dialog = ExportDialog(mocker.MagicMock(), 'mock_uuid', 'mock.jpg')
+
+    dialog._on_continue_clicked()
 
     controller.run_export_preflight_checks.assert_called_with()
 
 
-def test_ExportDialog_pre_flight_updates_dialog_on_CALLED_PROCESS_ERROR(mocker):
+def test_ExportDialog__on_unlock_disk_clicked(mocker):
     """
-    Ensure CALLED_PROCESS_ERROR during pre-flight updates the dialog with the status code.
+    Ensure unlocking disk retrieves passphrase and tells Controller to export the file.
     """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     controller = mocker.MagicMock()
-    called_process_error = ExportError(ExportStatus.CALLED_PROCESS_ERROR.value)
-    controller.run_export_preflight_checks = mocker.MagicMock(side_effect=called_process_error)
+    controller.export_file_to_usb_drive = mocker.MagicMock()
+    dialog = ExportDialog(controller, 'mock_uuid', 'mock.jpg')
+    dialog.passphrase_field.text = mocker.MagicMock(return_value='mock_passphrase')
+
+    dialog._on_unlock_disk_clicked()
+
+    controller.export_file_to_usb_drive.assert_called_once_with('mock_uuid', 'mock_passphrase')
+
+
+def test_ExportDialog__on_start_export_vm_success(mocker):
+    """
+    Ensure success signal from starting the Export VM results in enabling the CONTINUE button and
+    hiding the message saying that the CONTINUE button will be disabled until the Export VM starts.
+    """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    controller = mocker.MagicMock()
+    dialog = ExportDialog(controller, 'mock_uuid', 'mock.jpg')
+    dialog._update = mocker.MagicMock()
+
+    dialog._on_start_export_vm_success()
+
+    assert dialog.continue_button.isEnabled()
+    assert dialog.continue_disabled_message.isHidden()
+
+
+def test_ExportDialog__on_start_export_vm_failure(mocker):
+    """
+    Ensure error during startup updates the dialog with the status code.
+    """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    controller = mocker.MagicMock()
+    dialog = ExportDialog(controller, 'mock_uuid', 'mock.jpg')
+    dialog._update = mocker.MagicMock()
+
+    dialog._on_start_export_vm_failure('mock_status_code')
+
+    dialog._update.assert_called_once_with('mock_status_code')
+
+
+def test_ExportDialog_cancel_clicked(mocker):
+    """
+    Ensure clicking cancel closes the dialog.
+    """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    dialog = ExportDialog(mocker.MagicMock(), 'mock_uuid', 'mock.jpg')
+    dialog.close = mocker.MagicMock()
+    window_buttons = dialog.layout().takeAt(3).widget()
+    button_box = window_buttons.layout().takeAt(1).widget()
+    cancel_button = button_box.buttons()[0]
+
+    cancel_button.click()
+
+    dialog.close.assert_called_once_with()
+
+
+def test_ExportDialog__on_preflight_success(mocker):
+    """
+    Ensure success signal from preflight results in showing the passphrase form and connecting the
+    CONTINUE button to the handler for exporting the file.
+    """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    controller = mocker.MagicMock()
+    controller.export_file_to_usb_drive = mocker.MagicMock()
+    dialog = ExportDialog(controller, 'mock_uuid', 'mock.jpg')
+    # dialog._on_continue_clicked = mocker.MagicMock()
+    # dialog._on_continue_clicked_after_preflight = mocker.MagicMock()
+
+    dialog._on_preflight_success()
+
+    assert not dialog.passphrase_form.isHidden()
+
+    dialog.continue_button.setEnabled(True)
+    dialog.continue_button.click()
+    # dialog._on_continue_clicked_after_preflight.assert_called_with(False)
+
+    controller.export_file_to_usb_drive.assert_called_once_with()
+
+
+def test_ExportDialog__on_preflight_failure(mocker):
+    """
+    Ensure error during pre-flight updates the dialog with the status code.
+    """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    controller = mocker.MagicMock()
     export_dialog = ExportDialog(controller, 'mock_uuid', 'mock.jpg')
-    export_dialog._request_passphrase = mocker.MagicMock()
-    export_dialog._request_to_insert_usb_device = mocker.MagicMock()
     export_dialog._update = mocker.MagicMock()
 
-    export_dialog._on_preflight_check_call_failure(called_process_error)
+    export_dialog._on_preflight_failure('mock_status_code')
 
-    export_dialog._request_passphrase.assert_not_called()
-    export_dialog._request_to_insert_usb_device.assert_not_called()
-    export_dialog._update.assert_called_once_with(called_process_error.status)
+    export_dialog._update.assert_called_once_with('mock_status_code')
 
 
-def test_ExportDialog_export_updates_dialog_on_CALLED_PROCESS_ERROR(mocker):
+def test_ExportDialog__on_export_failure(mocker):
     """
-    Ensure CALLED_PROCESS_ERROR during export updates the dialog with the status code.
+    Ensure error during export updates the dialog with the status code.
     """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     controller = mocker.MagicMock()
-    called_process_error = ExportError(ExportStatus.CALLED_PROCESS_ERROR.value)
-    controller.run_export_preflight_checks = mocker.MagicMock(side_effect=called_process_error)
     export_dialog = ExportDialog(controller, 'mock_uuid', 'mock.jpg')
-    export_dialog._request_passphrase = mocker.MagicMock()
-    export_dialog._request_to_insert_usb_device = mocker.MagicMock()
     export_dialog._update = mocker.MagicMock()
 
-    export_dialog._on_export_usb_call_failure(called_process_error)
+    export_dialog._on_export_failure(ExportError('mock_status_code'))
 
-    export_dialog._request_passphrase.assert_not_called()
-    export_dialog._request_to_insert_usb_device.assert_not_called()
-    export_dialog._update.assert_called_once_with(called_process_error.status)
+    export_dialog._update.assert_called_once_with('mock_status_code')
 
+
+def test_ExportDialog__update_BAD_PASSPHRASE(mocker):
+    pass
 
 def test_ExportDialog__on_retry_export_button_clicked(mocker):
     """
     Ensure happy path runs preflight checks.
     """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     controller = mocker.MagicMock()
     export_dialog = ExportDialog(controller, 'mock_uuid', 'mock.jpg')
 
@@ -1614,6 +1717,8 @@ def test_ExportDialog__update_export_button_clicked_USB_NOT_CONNECTED(mocker):
     """
     Ensure request to insert USB device on USB_NOT_CONNECTED.
     """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     controller = mocker.MagicMock()
     usb_not_connected_error = ExportError(ExportStatus.USB_NOT_CONNECTED.value)
     export_dialog = ExportDialog(controller, 'mock_uuid', 'mock.jpg')
@@ -1626,19 +1731,24 @@ def test_ExportDialog__update_export_button_clicked_USB_NOT_CONNECTED(mocker):
     export_dialog._request_to_insert_usb_device.assert_called_once_with()
 
 
-def test_ExportDialog__request_to_insert_usb_device(mocker):
-    """Ensure that the correct widgets are visible or hidden."""
-    export_dialog = ExportDialog(mocker.MagicMock(), 'mock_uuid', 'mock.jpg')
+def test_ExportDialog__show_insert_usb_message(mocker):
+    """Ensure that the correct header and body are shown."""
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    dialog = ExportDialog(mocker.MagicMock(), 'mock_uuid', 'mock_filename.pdf')
 
-    export_dialog._request_to_insert_usb_device()
+    dialog._show_insert_usb_message()
 
-    assert export_dialog.passphrase_form.isHidden()
-    assert not export_dialog.insert_usb_form.isHidden()
-    assert export_dialog.usb_error_message.isHidden()
+    assert dialog.passphrase_form.isHidden()
+    assert dialog.header.text() == 'Insert encrypted USB drive'
+    assert dialog.body.text() == 'Please insert one of the export drives provisioned ' \
+        'specifically for the SecureDrop Workstation.'
 
 
 def test_ExportDialog__request_to_insert_usb_device_after_encryption_error(mocker):
     """Ensure that the correct widgets are visible or hidden."""
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     export_dialog = ExportDialog(mocker.MagicMock(), 'mock_uuid', 'mock.jpg')
 
     export_dialog._request_to_insert_usb_device(encryption_not_supported=True)
@@ -1650,6 +1760,8 @@ def test_ExportDialog__request_to_insert_usb_device_after_encryption_error(mocke
 
 def test_ExportDialog__request_passphrase(mocker):
     """Ensure that the correct widgets are visible or hidden."""
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     export_dialog = ExportDialog(mocker.MagicMock(), 'mock_uuid', 'mock.jpg')
 
     export_dialog._request_passphrase()
@@ -1662,6 +1774,8 @@ def test_ExportDialog__request_passphrase(mocker):
 
 def test_ExportDialog__request_passphrase_more_than_once(mocker):
     """Ensure that the correct widgets are visible or hidden."""
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     export_dialog = ExportDialog(mocker.MagicMock(), 'mock_uuid', 'mock.jpg')
 
     export_dialog._request_passphrase(bad_passphrase=True)
@@ -1676,6 +1790,8 @@ def test_ExportDialog__on_export_success_closes_window(mocker):
     """
     Ensure successful export results in the export dialog window closing.
     """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     controller = mocker.MagicMock()
     export_dialog = ExportDialog(controller, 'mock_uuid', 'mock.jpg')
     export_dialog.close = mocker.MagicMock()
@@ -1685,41 +1801,12 @@ def test_ExportDialog__on_export_success_closes_window(mocker):
     export_dialog.close.assert_called_once_with()
 
 
-def test_ExportDialog__on_unlock_disk_clicked(mocker):
-    """
-    Ensure export of file begins once the passphrase is retrieved from the uesr.
-    """
-    controller = mocker.MagicMock()
-    controller.export_file_to_usb_drive = mocker.MagicMock()
-    export_dialog = ExportDialog(controller, 'mock_uuid', 'mock.jpg')
-    export_dialog._update = mocker.MagicMock()
-    export_dialog.passphrase_field.text = mocker.MagicMock(return_value='mock_passphrase')
-
-    export_dialog._on_unlock_disk_clicked()
-
-    controller.export_file_to_usb_drive.assert_called_once_with('mock_uuid', 'mock_passphrase')
-    export_dialog._update.assert_not_called()
-
-
-def test_ExportDialog__on_unlock_disk_clicked_asks_for_passphrase_again_on_error(mocker):
-    """
-    Ensure user is asked for passphrase when there is a bad passphrase error.
-    """
-    controller = mocker.MagicMock()
-    bad_password_export_error = ExportError(ExportStatus.BAD_PASSPHRASE.value)
-    export_dialog = ExportDialog(controller, 'mock_uuid', 'mock.jpg')
-    export_dialog._request_passphrase = mocker.MagicMock()
-    export_dialog.passphrase_field.text = mocker.MagicMock(return_value='mock_passphrase')
-
-    export_dialog._on_export_usb_call_failure(bad_password_export_error)
-
-    export_dialog._request_passphrase.assert_called_with(True)
-
-
 def test_ExportDialog__update_preflight_non_called_process_error(mocker):
     """
     Ensure generic errors are passed through to _update
     """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     export_dialog = ExportDialog(mocker.MagicMock(), 'mock_uuid', 'mock.jpg')
     export_dialog.generic_error = mocker.MagicMock()
     error = ExportError('generic error')
@@ -1731,6 +1818,8 @@ def test_ExportDialog__update_after_USB_NOT_CONNECTED(mocker):
     """
     Ensure USB_NOT_CONNECTED results in asking the user connect their USB device.
     """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     export_dialog = ExportDialog(mocker.MagicMock(), 'mock_uuid', 'mock.jpg')
     export_dialog._request_to_insert_usb_device = mocker.MagicMock()
     export_dialog._update(ExportStatus.USB_NOT_CONNECTED.value)
@@ -1741,6 +1830,8 @@ def test_ExportDialog__update_after_DISK_ENCRYPTION_NOT_SUPPORTED_ERROR(mocker):
     """
     Ensure USB_NOT_CONNECTED results in asking the user connect their USB device.
     """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     export_dialog = ExportDialog(mocker.MagicMock(), 'mock_uuid', 'mock.jpg')
     export_dialog._request_to_insert_usb_device = mocker.MagicMock()
     export_dialog._update(ExportStatus.DISK_ENCRYPTION_NOT_SUPPORTED_ERROR.value)
@@ -1752,28 +1843,64 @@ def test_ExportDialog__update_after_CALLED_PROCESS_ERROR(mocker):
     Ensure CALLED_PROCESS_ERROR shows generic 'contact admin' error with correct
     error status code.
     """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     export_dialog = ExportDialog(mocker.MagicMock(), 'mock_uuid', 'mock.jpg')
     export_dialog._request_to_insert_usb_device = mocker.MagicMock()
     export_dialog._request_passphrase = mocker.MagicMock()
+    export_dialog._update = mocker.MagicMock()
     error = ExportError(ExportStatus.CALLED_PROCESS_ERROR.value)
 
-    export_dialog._on_export_usb_call_failure(error)
+    export_dialog._on_export_failure(error)
 
-    assert export_dialog.starting_export_message.isHidden()
-    assert export_dialog.passphrase_form.isHidden()
-    assert export_dialog.insert_usb_form.isHidden()
-    assert not export_dialog.generic_error.isHidden()
-    assert export_dialog.error_status_code.text() == 'CALLED_PROCESS_ERROR'
     export_dialog._request_to_insert_usb_device.assert_not_called()
     export_dialog._request_passphrase.assert_not_called()
+    export_dialog._update.assert_called_once_with('CALLED_PROCESS_ERROR')
+
+
+def test_PrintDialog_cancel(mocker):
+    """
+    Ensure clicking cancel closes the dialog.
+    """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    controller = mocker.MagicMock()
+    dialog = PrintDialog(controller, 'mock_uuid', 'mock.jpg')
+    dialog.close = mocker.MagicMock()
+
+    starting_layout = dialog.starting.layout()
+    starting_buttons = starting_layout.takeAt(1).widget()
+    starting_cancel_button = starting_buttons.buttons()[0]
+    starting_cancel_button.click()
+
+    dialog.close.assert_called_with()
+
+
+def test_PrintDialog_continue(mocker):
+    """
+    Ensure clicking continue runs preflight checks.
+    """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    controller = mocker.MagicMock()
+    dialog = PrintDialog(controller, 'mock_uuid', 'mock.jpg')
+    starting_layout = dialog.starting.layout()
+    starting_buttons = starting_layout.takeAt(1).widget()
+    starting_continue_button = starting_buttons.buttons()[1]
+
+    starting_continue_button.click()
+
+    controller.print_file.assert_called_with('mock_uuid')
 
 
 def test_PrintDialog__on_retry_button_clicked(mocker):
     """
     Ensure happy path prints the file.
     """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     controller = mocker.MagicMock()
-    dialog = PrintDialog(controller, 'mock_uuid')
+    dialog = PrintDialog(controller, 'mock_uuid', 'mock_filename.pdf')
 
     dialog._on_retry_button_clicked()
 
@@ -1784,9 +1911,11 @@ def test_PrintDialog__update_print_button_clicked_PRINTER_NOT_FOUND(mocker):
     """
     Ensure request to insert USB device on PRINTER_NOT_FOUND.
     """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     controller = mocker.MagicMock()
     error = ExportError(ExportStatus.PRINTER_NOT_FOUND.value)
-    dialog = PrintDialog(controller, 'mock_uuid')
+    dialog = PrintDialog(controller, 'mock_uuid', 'mock_filename.pdf')
     dialog._request_to_insert_usb_device = mocker.MagicMock()
 
     dialog._update(error.status)
@@ -1794,25 +1923,26 @@ def test_PrintDialog__update_print_button_clicked_PRINTER_NOT_FOUND(mocker):
     dialog._request_to_insert_usb_device.assert_called_once_with()
 
 
-def test_PrintDialog__request_to_insert_usb_device(mocker):
+def test_PrintDialog__show_insert_usb_message(mocker):
     """Ensure that the correct widgets are visible or hidden."""
-    dialog = PrintDialog(mocker.MagicMock(), 'mock_uuid')
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    dialog = PrintDialog(mocker.MagicMock(), 'mock_uuid', 'mock_filename.pdf')
 
-    dialog._request_to_insert_usb_device()
+    dialog._show_insert_usb_message()
 
-    assert dialog.starting_message.isHidden()
-    assert dialog.printing_message.isHidden()
-    assert dialog.generic_error.isHidden()
-    assert not dialog.insert_usb_form.isHidden()
-    assert not dialog.usb_error_message.isHidden()
+    assert dialog.header.text() == 'Insert USB printer'
+    assert dialog.body.text() == 'Please connect your printer to a USB port.'
 
 
 def test_PrintDialog__on_print_success_closes_window(mocker):
     """
     Ensure successful print results in the print dialog window closing.
     """
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
     controller = mocker.MagicMock()
-    dialog = PrintDialog(controller, 'mock_uuid')
+    dialog = PrintDialog(controller, 'mock_uuid', 'mock_filename.pdf')
     dialog.close = mocker.MagicMock()
 
     dialog._on_print_success()
@@ -1820,68 +1950,67 @@ def test_PrintDialog__on_print_success_closes_window(mocker):
     dialog.close.assert_called_once_with()
 
 
-def test_PrintDialog__on_print_call_failure_generic_error(mocker):
+def test_PrintDialog__on_print_failure_generic_error(mocker):
     """
-    Ensure generic errors are passed through to _update
+    Ensure generic errors are passed through to _show_generic_error_message
     """
-    dialog = PrintDialog(mocker.MagicMock(), 'mock_uuid')
-    dialog.generic_error = mocker.MagicMock()
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    dialog = PrintDialog(mocker.MagicMock(), 'mock_uuid', 'mock_filename.pdf')
+    dialog._show_generic_error_message = mocker.MagicMock()
     error = ExportError('generic error')
 
     dialog._on_print_failure(error)
 
-    dialog.generic_error.show.assert_called_once_with()
+    dialog._show_generic_error_message.assert_called_once_with('generic error')
 
 
 def test_PrintDialog__update_after_PRINTER_NOT_FOUND(mocker):
     """
-    Ensure PRINTER_NOT_FOUND results in asking the user connect their USB device.
+    Ensure PRINTER_NOT_FOUND results in showing message to connect USB device.
     """
-    dialog = PrintDialog(mocker.MagicMock(), 'mock_uuid')
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    dialog = PrintDialog(mocker.MagicMock(), 'mock_uuid', 'mock_filename.pdf')
     dialog._request_to_insert_usb_device = mocker.MagicMock()
+
     dialog._update(ExportStatus.PRINTER_NOT_FOUND.value)
-    dialog._request_to_insert_usb_device.assert_called_once_with()
+
+    dialog._show_insert_usb_message.assert_called_once_with()
 
 
-def test_PrintDialog__update_after_MISSING_PRINTER_URI(mocker):
+def test_PrintDialog__on_print_failure_with_MISSING_PRINTER_URI(mocker):
     """
-    Ensure MISSING_PRINTER_URI shows generic 'contact admin' error with correct
-    error status code.
+    Ensure _on_print_failure calls update with the correct error status.
     """
-    dialog = PrintDialog(mocker.MagicMock(), 'mock_uuid')
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    dialog = PrintDialog(mocker.MagicMock(), 'mock_uuid', 'mock_filename.pdf')
     dialog._request_to_insert_usb_device = mocker.MagicMock()
-    dialog._update(ExportStatus.MISSING_PRINTER_URI.value)
+    dialog._update = mocker.MagicMock()
     dialog._request_to_insert_usb_device = mocker.MagicMock()
-
     error = ExportError(ExportStatus.MISSING_PRINTER_URI.value)
+
     dialog._on_print_failure(error)
 
-    assert dialog.error_status_code.text() == 'ERROR_MISSING_PRINTER_URI'
-    assert dialog.starting_message.isHidden()
-    assert dialog.printing_message.isHidden()
-    assert not dialog.generic_error.isHidden()
-    assert dialog.insert_usb_form.isHidden()
-    dialog._request_to_insert_usb_device.assert_not_called()
+    dialog._update.assert_called_once_with(ExportStatus.MISSING_PRINTER_URI.value)
 
 
-def test_PrintDialog__update_after_CALLED_PROCESS_ERROR(mocker):
+def test_PrintDialog__on_print_failure_with_CALLED_PROCESS_ERROR(mocker):
     """
-    Ensure CALLED_PROCESS_ERROR shows generic 'contact admin' error with correct
-    error status code.
+    Ensure _on_print_failure calls update with the correct error status.
     """
-    dialog = PrintDialog(mocker.MagicMock(), 'mock_uuid')
+    mocker.patch(
+        'securedrop_client.gui.widgets.QApplication.activeWindow', return_value=QMainWindow())
+    dialog = PrintDialog(mocker.MagicMock(), 'mock_uuid', 'mock_filename.pdf')
     dialog._request_to_insert_usb_device = mocker.MagicMock()
-    dialog._update(ExportStatus.MISSING_PRINTER_URI.value)
+    dialog._update = mocker.MagicMock()
     dialog._request_to_insert_usb_device = mocker.MagicMock()
-
     error = ExportError(ExportStatus.CALLED_PROCESS_ERROR.value)
+
     dialog._on_print_failure(error)
 
-    assert dialog.error_status_code.text() == 'CALLED_PROCESS_ERROR'
-    assert dialog.starting_message.isHidden()
-    assert dialog.insert_usb_form.isHidden()
-    assert not dialog.generic_error.isHidden()
-    dialog._request_to_insert_usb_device.assert_not_called()
+    dialog._update.assert_called_once_with(ExportStatus.CALLED_PROCESS_ERROR.value)
 
 
 def test_ConversationView_init(mocker, homedir):
