@@ -170,7 +170,7 @@ class ApiJobQueue(QObject):
         self.main_queue.paused.connect(self.on_queue_paused)
         self.download_file_queue.paused.connect(self.on_queue_paused)
 
-    def logout(self) -> None:
+    def stop(self) -> None:
         if self.main_thread.isRunning():
             logger.debug('Stopping main queue thread')
             self.main_thread.quit()
@@ -179,13 +179,14 @@ class ApiJobQueue(QObject):
             logger.debug('Stopping download queue thread')
             self.download_file_thread.quit()
 
-    def login(self, api_client: API) -> None:
+    def start(self, api_client: API) -> None:
+        '''
+        Start the queues whenever a new api token is provided.
+        '''
         logger.debug('Passing API token to queues')
         self.main_queue.api_client = api_client
         self.download_file_queue.api_client = api_client
-        self.start_queues()
 
-    def start_queues(self) -> None:
         if not self.main_thread.isRunning():
             logger.debug('Starting main thread')
             self.main_thread.start()
@@ -199,20 +200,23 @@ class ApiJobQueue(QObject):
 
     def resume_queues(self) -> None:
         logger.info("Resuming queues")
-        self.start_queues()
         if not self.main_thread.isRunning():
             self.main_queue.resume.emit()
         if not self.download_file_thread.isRunning():
             self.download_file_queue.resume.emit()
 
     def enqueue(self, job: ApiJob) -> None:
-        # Prevent api jobs being added to the queue when not logged in.
-        if (not self.main_queue.api_client or not self.download_file_queue.api_client):
-            logger.info('Not adding job, we are not logged in')
+        '''
+        Enqueue job if the queue threads are running
+        '''
+        if not self.main_thread.isRunning() or not self.download_file_thread.isRunning():
+            logger.info('Not adding job before queues have been started with a auth token.')
             return
 
-        # First check the queues are started in case they died for some reason.
-        self.start_queues()
+        if not self.main_queue.api_client or not self.download_file_queue.api_client:
+            logger.info('Not adding job without a valid token.')
+            self.stop()
+            return
 
         if isinstance(job, FileDownloadJob):
             logger.debug('Adding job to download queue')
