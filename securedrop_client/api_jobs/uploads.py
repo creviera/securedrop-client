@@ -52,9 +52,14 @@ class SendReplyJob(ApiJob):
                 session.commit()
                 raise Exception('Source {} does not exists'.format(self.source_uuid))
 
+            from time import sleep
+            sleep(5)
+
             # Send the draft reply to the source
             encrypted_reply = self.gpg.encrypt_to_source(self.source_uuid, self.message)
             sdk_reply = self._make_call(encrypted_reply, api_client)
+
+            sleep(5)
 
             # Create a new reply object with an updated filename and file counter
             interaction_count = source.interaction_count + 1
@@ -74,14 +79,17 @@ class SendReplyJob(ApiJob):
             # Update following draft replies for the same source to reflect the new reply count
             draft_file_counter = draft_reply_db_object.file_counter
             draft_timestamp = draft_reply_db_object.timestamp
+            logger.info('ABOUT TO UPDATE DRAFT REPLIES')
             update_draft_replies(
                 session, source.id, draft_timestamp, draft_file_counter, new_file_counter)
 
             # Add reply to replies table and increase the source interaction count by 1 and delete
             # the draft reply.
+            logger.info('ABOUT TO ADD NEW REPLY {}'.format(reply_db_object.uuid))
             session.add(reply_db_object)
             source.interaction_count += 1
             session.add(source)
+            logger.info('ABOUT TO DELETE DRAFT REPLY {}'.format(draft_reply_db_object.uuid))
             session.delete(draft_reply_db_object)
             session.commit()
 
@@ -119,7 +127,7 @@ class SendReplyJob(ApiJob):
         # TODO: Once https://github.com/freedomofpress/securedrop-client/issues/648, we will want to
         # pass the default request timeout to reply_source instead of setting it on the api object
         # directly.
-        api_client.default_request_timeout = 5
+        api_client.default_request_timeout = 0.04
         return api_client.reply_source(sdk_source, encrypted_reply, self.reply_uuid)
 
 

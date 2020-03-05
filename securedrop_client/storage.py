@@ -311,6 +311,7 @@ def update_replies(remote_replies: List[SDKReply], local_replies: List[Reply],
                        source_id=source.id,
                        filename=reply.filename,
                        size=reply.size)
+            logger.info('SYNC: ABOUT TO ADD NEW REPLY {}'.format(reply_db_object.uuid))
             session.add(nr)
 
             # All replies fetched from the server have succeeded in being sent,
@@ -319,10 +320,12 @@ def update_replies(remote_replies: List[SDKReply], local_replies: List[Reply],
                 draft_reply_db_object = session.query(DraftReply).filter_by(
                     uuid=reply.uuid).one()
 
+                logger.info('SYNC: ABOUT TO UPDATE DRAFT REPLIES')
                 update_draft_replies(session, draft_reply_db_object.source.id,
                                      draft_reply_db_object.timestamp,
                                      draft_reply_db_object.file_counter,
                                      nr.file_counter)
+                logger.info('SYNC: ABOUT TO DELETE DRAFT REPLY {}'.format(draft_reply_db_object.uuid))
                 session.delete(draft_reply_db_object)
 
             except NoResultFound:
@@ -334,6 +337,7 @@ def update_replies(remote_replies: List[SDKReply], local_replies: List[Reply],
     # delete the related records.
     replies_to_delete = [r for r in local_replies if r.uuid in local_uuids]
     for deleted_reply in replies_to_delete:
+        logger.info('SYNC: ABOUT TO DELETE DRAFT REPLY {}'.format(deleted_reply.uuid))
         delete_single_submission_or_reply_on_disk(deleted_reply, data_dir)
         session.delete(deleted_reply)
         logger.debug('Deleted reply {}'.format(deleted_reply.uuid))
