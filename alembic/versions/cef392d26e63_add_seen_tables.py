@@ -1,4 +1,4 @@
-"""add seen tables
+"""add seen tables and fix reply association with journalist
 
 Revision ID: cef392d26e63
 Revises: 7f682532afa2
@@ -45,6 +45,42 @@ def upgrade():
     sa.PrimaryKeyConstraint('id', name=op.f('pk_seen_replies')),
     sa.UniqueConstraint('reply_id', 'journalist_id', name=op.f('uq_seen_replies_reply_id'))
     )
+
+    # Fix reply association with journalist by updating journalist uuid to journalist id in the
+    # journalist_id column
+    conn = op.get_bind()
+    cursor = conn.execute("""
+        SELECT journalist_id
+        FROM replies, users
+        WHERE journalist_id=users.uuid;
+    """)
+
+    replies_with_incorrect_associations = cursor.fetchall()
+    if not replies_with_incorrect_associations:
+        return
+
+    conn.execute("""
+        UPDATE replies
+        SET journalist_id=
+        (
+            SELECT users.id
+            FROM users
+            WHERE journalist_id=users.uuid
+        )
+        WHERE exists
+        (
+            SELECT users.id
+            FROM users
+            WHERE journalist_id=users.uuid
+        );
+    """)
+
+    cursor = conn.execute("""
+        SELECT journalist_id
+        FROM replies, users
+        WHERE journalist_id=users.uuid;
+    """)
+    assert not replies_with_incorrect_associations
 
 
 def downgrade():
